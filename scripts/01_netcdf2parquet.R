@@ -30,8 +30,13 @@ library(tidyr)
 # 3: Configuration
 # Variables
 dataset <- "acpcp"
-input_dir <- "~/environ/01_source/narr_acpcp" # mounted bucket location
-output_root <- "~/environ/02_parquet/narr_acpcp" # parquet output root
+years <- c(2020)   # use 2020 or c(2020, 2021, 2022)
+
+# input_dir <- "~/environ/01_source/narr_acpcp" # mounted bucket location
+# output_root <- "~/environ/02_parquet/narr_acpcp" # parquet output root
+
+input_dir <- "P://environ/01_source/narr_acpcp" # mounted bucket location
+output_root <- "P://environ/02_parquet/narr_acpcp" # parquet output root
 
 # Create output file location
 unlink(output_root, recursive = TRUE)
@@ -119,19 +124,26 @@ raster_to_env_table <- function(r, timestamp, time_index, dataset_name, source_f
 # -------------------------
 
 files <- list.files(input_dir, pattern = "\\.nc$", full.names = TRUE, recursive = TRUE)
-if (length(files) == 0) stop("No NetCDF files found in: ", input_dir)
+
+# keep only files whose names contain one of the requested years
+year_pattern <- paste0("(", paste(years, collapse = "|"), ")")
+files <- files[grepl(year_pattern, basename(files))]
+
+if (length(files) == 0) stop("No NetCDF files found for requested years in: ", input_dir)
 
 for (file in files) {
   message("Processing file: ", file)
-  
+
   file_base <- basename(file)
-  
+
   yr_match <- regmatches(file_base, regexpr("20[0-9]{2}", file_base))
   if (length(yr_match) == 0 || yr_match == "") {
     warning("Could not infer year from filename: ", file_base)
     next
   }
   yr <- as.integer(yr_match)
+
+  if (!(yr %in% years)) next
   
   nc <- ncdf4::nc_open(file)
   
@@ -229,144 +241,3 @@ for (file in files) {
   
   ncdf4::nc_close(nc)
 }
-
-
-# Extracting a value as a point for each grid
-# # Target Grid definition
-# clip_extent <- extent(-5000000, 1900000, 300000, 4000000)
-# target_raster <- raster(
-#   clip_extent,
-#   resolution = c(25067.53, 25067.53),
-#   crs = CRS("+init=epsg:3338")
-# )
-# 
-# # precompute grid cell centers once
-# grid_xy <- raster::xyFromCell(target_raster, 1:ncell(target_raster))
-# grid_ref <- data.frame(
-#   cell_id = seq_len(nrow(grid_xy)),
-#   x = grid_xy[, 1],
-#   y = grid_xy[, 2]
-# )
-# 
-# # helper: convert one raster slice to tidy rows
-# raster_to_table <- function(r, timestamp, source_file, time_index, dataset_name) {
-#   pts <- raster::rasterToPoints(r, spatial = FALSE)
-#   if (is.null(pts) || nrow(pts) == 0) return(NULL)
-#   
-#   df <- as.data.frame(pts)
-#   names(df) <- c("x", "y", "value")
-#   
-#   df <- df |>
-#     dplyr::filter(!is.na(value)) |>
-#     dplyr::mutate(
-#       dataset = dataset_name,
-#       timestamp = timestamp,
-#       source_file = source_file,
-#       time_index = time_index,
-#       year = lubridate::year(timestamp),
-#       month = lubridate::month(timestamp),
-#       day = lubridate::day(timestamp),
-#       hour = lubridate::hour(timestamp),
-#       crs_epsg = 3338
-#     ) |>
-#     dplyr::select(dataset, year, month, day, hour, timestamp, time_index, x, y, value, crs_epsg, source_file)
-#   
-#   df
-# }
-# 
-# files <- list.files(input_dir, pattern = "\\.nc$", full.names = TRUE, recursive = TRUE)
-# 
-# for (file in files) {
-#   message(paste0("Processing: ", file))
-#   file_base <- basename(file)
-#   
-#   yr_match <- regmatches(file_base, regexpr("20[0-9]{2}", file_base))
-#   if (length(yr_match) == 0 || yr_match == "") {
-#     warning("Could not infer year from filename: ", file_base)
-#     next
-#   }
-#   yr <- as.integer(yr_match)
-#   
-#   nc <- ncdf4::nc_open(file)
-#   on.exit(ncdf4::nc_close(nc), add = TRUE)
-#   
-#   if (!(dataset %in% names(nc$var))) {
-#     warning("Variable '", dataset, "' not found in file: ", file_base)
-#     ncdf4::nc_close(nc)
-#     next
-#   }
-#   
-#   arr <- ncdf4::ncvar_get(nc, dataset)
-#   dims <- dim(arr)
-#   
-#   # parse time dimension
-#   time_vals <- ncdf4::ncvar_get(nc, "time")
-#   time_units <- ncdf4::ncatt_get(nc, "time", "units")$value
-#   time_origin <- sub(".*since ", "", time_units)
-#   
-#   if (grepl("second", time_units, ignore.case = TRUE)) {
-#     times <- as.POSIXct(time_origin, tz = "UTC") + time_vals
-#   } else if (grepl("minute", time_units, ignore.case = TRUE)) {
-#     times <- as.POSIXct(time_origin, tz = "UTC") + time_vals * 60
-#   } else if (grepl("day", time_units, ignore.case = TRUE)) {
-#     times <- as.POSIXct(time_origin, tz = "UTC") + time_vals * 86400
-#   } else {
-#     times <- as.POSIXct(time_origin, tz = "UTC") + time_vals * 3600
-#   }
-#   
-#   chunk_size <- 500
-#   chunk_rows <- list()
-#   part_idx <- 1
-#   
-#   for (t_idx in seq_len(dims[3])) {
-#     message("  time slice ", t_idx, " / ", dims[3])
-#     
-#     mat <- arr[, , t_idx]
-#     
-#     r <- raster::raster(t(mat[nrow(mat):1, ]))
-#     extent(r) <- extent(target_raster)
-#     crs(r) <- crs(target_raster)
-#     
-#     r_proj <- raster::projectRaster(r, target_raster, method = "bilinear")
-#     
-#     ts <- if (t_idx <= length(times)) times[t_idx] else as.POSIXct(paste0(yr, "-01-01 00:00:00"), tz = "UTC")
-#     
-#     slice_df <- raster_to_table(
-#       r_proj,
-#       timestamp = ts,
-#       source_file = file_base,
-#       time_index = t_idx,
-#       dataset_name = dataset
-#     )
-#     
-#     if (!is.null(slice_df) && nrow(slice_df) > 0) {
-#       chunk_rows[[length(chunk_rows) + 1]] <- slice_df
-#     }
-#     
-#     if (length(chunk_rows) >= chunk_size) {
-#       out_df <- dplyr::bind_rows(chunk_rows)
-#       out_path_part <- file.path(
-#         output_dir,
-#         paste0("acpcp_", yr, "_", tools::file_path_sans_ext(file_base), "_part", sprintf("%03d", part_idx), ".parquet")
-#       )
-#       arrow::write_parquet(out_df, out_path_part)
-#       message("  wrote chunk: ", out_path_part)
-#       
-#       chunk_rows <- list()
-#       part_idx <- part_idx + 1
-#     }
-#   }
-#   
-#   # flush remaining rows
-#   if (length(chunk_rows) > 0) {
-#     out_df <- dplyr::bind_rows(chunk_rows)
-#     out_path_part <- file.path(
-#       output_dir,
-#       paste0("acpcp_", yr, "_", tools::file_path_sans_ext(file_base), "_part", sprintf("%03d", part_idx), ".parquet")
-#     )
-#     arrow::write_parquet(out_df, out_path_part)
-#     message("  wrote final chunk: ", out_path_part)
-#   }
-#   
-#   ncdf4::nc_close(nc)
-# }
