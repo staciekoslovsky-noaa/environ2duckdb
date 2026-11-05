@@ -29,21 +29,28 @@ library(tidyr)
 
 # 3: Configuration
 # Variables
-dataset <- "acpcp"
-years <- c(2020)   # use 2020 or c(2020, 2021, 2022)
+dataset <- "narr_vwnd"
+datatype <- "vwnd" # "air" for air2m and airsfc
+years <- c(2025)   # use 2020 or c(2020, 2021, 2022) or c(2004:2025)
+
+# To check variable name for a datatype, if needed
+# nc <- ncdf4::nc_open(file)
+# names(nc$var)
+# print(nc)
+# ncdf4::nc_close(nc)
 
 # input_dir <- "~/environ/01_source/narr_acpcp" # mounted bucket location
 # output_root <- "~/environ/02_parquet/narr_acpcp" # parquet output root
 
-input_dir <- "P://environ/01_source/narr_acpcp" # mounted bucket location
-output_root <- "P://environ/02_parquet/narr_acpcp" # parquet output root
+input_dir <- paste0("P:/environ/01_source/", dataset) # mounted bucket location
+output_root <- paste0("P:/environ/02_parquet/", dataset) # parquet output root
 
 # Create output file location
-unlink(output_root, recursive = TRUE)
+# unlink(output_root, recursive = TRUE) # only use if needing to start over from scratch; otherwise, skip this step since it deletes everything for the variable
 dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 
 grid_dir <- file.path(output_root, "grid")
-env_dir <- file.path(output_root, "env", paste0("dataset=", dataset))
+env_dir <- file.path(output_root, "env")
 
 dir.create(grid_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(env_dir, recursive = TRUE, showWarnings = FALSE)
@@ -147,8 +154,8 @@ for (file in files) {
   
   nc <- ncdf4::nc_open(file)
   
-  if (!(dataset %in% names(nc$var))) {
-    warning("Variable '", dataset, "' not found in file: ", file_base)
+  if (!(datatype %in% names(nc$var))) {
+    warning("Variable '", datatype, "' not found in file: ", file_base)
     ncdf4::nc_close(nc)
     next
   }
@@ -159,7 +166,7 @@ for (file in files) {
     next
   }
   
-  arr <- ncdf4::ncvar_get(nc, dataset)
+  arr <- ncdf4::ncvar_get(nc, datatype)
   dims <- dim(arr)
   
   if (length(dims) != 3) {
@@ -215,7 +222,7 @@ for (file in files) {
       
       out_path <- file.path(
         env_dir,
-        paste0(dataset, "_", yr, "_", tools::file_path_sans_ext(file_base), "_part", sprintf("%03d", part_idx), ".parquet")
+        paste0(tools::file_path_sans_ext(file_base), "_part", sprintf("%03d", part_idx), ".parquet")
       )
       
       arrow::write_parquet(out_df, out_path)
@@ -232,7 +239,7 @@ for (file in files) {
     
     out_path <- file.path(
       env_dir,
-      paste0(dataset, "_", yr, "_", tools::file_path_sans_ext(file_base), "_part", sprintf("%03d", part_idx), ".parquet")
+      paste0(tools::file_path_sans_ext(file_base), "_part", sprintf("%03d", part_idx), ".parquet")
     )
     
     arrow::write_parquet(out_df, out_path)
