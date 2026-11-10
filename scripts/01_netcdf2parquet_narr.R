@@ -56,18 +56,26 @@ dir.create(grid_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(env_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Target grid / projection used in the old workflow
-clip_extent <- extent(-5000000, 1900000, 300000, 4000000)
-target_raster <- raster(
-  clip_extent,
-  resolution = c(25067.53, 25067.53),
-  crs = CRS("+init=epsg:3338")
+target_resolution <- 25067.53
+
+target_raster <- terra::rast(
+  ncols = round((1900000 - (-5000000)) / target_resolution),
+  nrows = round((4000000 - 300000) / target_resolution),
+  xmin = -5000000,
+  xmax = 1900000,
+  ymin = 300000,
+  ymax = 4000000,
+  crs = "EPSG:3338"
 )
 
 # -------------------------
 # Build and write grid table once
 # -------------------------
 
-grid_xy <- raster::xyFromCell(target_raster, 1:ncell(target_raster))
+grid_xy <- terra::xyFromCell(
+  target_raster,
+  seq_len(terra::ncell(target_raster))
+)
 
 grid_df <- data.frame(
   cell_id = seq_len(nrow(grid_xy)),
