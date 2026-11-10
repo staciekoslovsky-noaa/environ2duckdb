@@ -96,7 +96,7 @@ grid_df <- data.frame(
   cell_id = seq_len(nrow(grid_xy)),
   x = grid_xy[, 1],
   y = grid_xy[, 2],
-  crs_epsg = 3338L
+  crs_epsg = 3338
 )
 
 grid_path <- file.path(grid_dir, "grid_3338.parquet")
